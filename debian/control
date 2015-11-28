@@ -2,12 +2,12 @@ Source: debathena-delete
 Section: debathena/utils
 Priority: extra
 Maintainer: Debathena Project <debathena@mit.edu>
-Build-Depends: cdbs, debhelper, dh-buildinfo, autoconf, comerr-dev, libopenafs-dev, automake1.10, autotools-dev, debathena-aclocal (>= 1.1.2~)
+Build-Depends: debhelper (>= 7.0.50~), python (>= 2.7)
 Standards-Version: 3.9.3
 
 Package: debathena-delete
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, python (>= 2.7), python-afs
 Description: A friendlier alternative to rm for Athena
  The delete utility marks files and directories for later permanent 
  removal by prefixing them with '.#'.  Files accidentally marked for 
