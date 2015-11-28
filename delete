@@ -1,0 +1,191 @@
+#!/usr/bin/python
+
+import logging
+import optparse
+import os
+import shutil
+import stat
+import sys
+
+import afs.fs
+
+logger = logging.getLogger('delete')
+whoami = os.path.basename(sys.argv[0])
+
+def debug_callback(option, opt_str, value, parser):
+    """
+    An OptionParser callback that enables debugging.
+    """
+    all_loggers = [logger.name, 'libdelete']
+    loggers = [x.strip() for x in value.split(',')]
+    if value.lower() == 'all':
+        loggers = all_loggers
+    else:
+        if not set(loggers) == set(all_loggers):
+            parser.error('Valid debug targets: {0}'.format(
+                    ", ".join(all_loggers)))
+    for l in loggers:
+        logging.getLogger(l).setLevel(logging.DEBUG)
+
+def ask(question, *args, **kwargs):
+    """
+    Ask a question, possibly prepended with the name of the program
+    and determine whether the user answered in the affirmative
+    """
+    yes = ('y', 'yes')
+    prepend = '' if kwargs.get('nowhoami', False) else "{0}: ".format(whoami)
+    try:
+        return raw_input("%s%s " % (prepend,
+                                    question % args)).strip().lower() in yes
+    except KeyboardInterrupt:
+        sys.exit(0)
+
+def perror(message, **kwargs):
+    """
+    Format an error message, log it in the debug log
+    and maybe also print it to stderr.
+    """
+    should_print = not kwargs.pop('_maybe', False)
+    msg = "{0}: {1}".format(whoami, message.format(**kwargs))
+    logger.debug("Error: %s", msg)
+    if should_print:
+        print >>sys.stderr, msg
+
+def actually_delete(filename, options):
+    """
+    Actually delete the file.
+    """
+    logger.debug("actually_delete(%s)", filename)
+    if options.interactive and not ask('remove %s?', filename):
+        return False
+    if not options.force and \
+            not os.path.islink(filename) and \
+            not os.access(filename, os.W_OK):
+        if not ask("File %s not writeable.  Delete anyway?",
+                   filename):
+            return False
+    if options.noop:
+        print >>sys.stderr, "{0}: {1} would be removed".format(whoami, filename)
+        return True
+    (dirname, basename) = os.path.split(filename)
+    newname = os.path.join(dirname, '.#' + basename)
+    if os.path.exists(newname):
+        # Yes, it just unconditionally scribbles over things, and always has.
+        if os.path.isdir(newname) and not os.path.islink(newname):
+            shutil.rmtree(newname)
+        else:
+            os.path.unlink(newname)
+    assert not os.path.exists(newname), "Fatal error: new path exists"
+    logger.debug("Move %s to %s", filename, newname)
+    # Maybe we can just use os.rename here
+    shutil.move(filename, newname)
+    # None means use the current time
+    os.utime(newname, None)
+    return True
+
+def delete(filename, options):
+    logger.debug("delete(%s)", filename)
+    if not os.path.lexists(filename):
+        perror('{filename}: No such file or directory',
+               filename=filename, _maybe=options.report_errors)
+        return False
+    if os.path.isdir(filename) and not os.path.islink(filename):
+        if os.path.basename(filename) in ('.', '..'):
+            perror("Cannot delete '.' or '..'", _maybe=options.report_errors)
+            return False
+        if options.filesonly:
+            if not options.recursive:
+                perror("{filename}: can't delete (not file)",
+                       filename=filename, _maybe=options.report_errors)
+                return False
+            for x in libdelete.dir_listing(filename):
+                logger.debug("Recursively deleting %s", x)
+                if not delete(x, options):
+                    logger.debug("Recursive delete failed")
+                    return False
+                return actually_delete(x, options)
+
+        else:
+            try:
+                is_empty = libdelete.empty_directory(filename)
+            except OSError as e:
+                # Do we want to only do this if emulating rm?
+                print >>sys.stderr, ": ".join((whoami, e.filename, e.strerror))
+                return False
+            if is_empty:
+                return actually_delete(filename, options)
+            if options.directoriesonly or not options.recursive:
+                perror("{filename}: can't delete (directory not empty)",
+                       filename=filename, _maybe=options.report_errors)
+            elif options.recursive:
+                for x in libdelete.dir_listing(filename):
+                    logger.debug("Recursively deleting %s", x)
+                    if not delete(x, options):
+                        logger.debug("Recursively delete failed")
+                        return False
+                return actually_delete(filename, options)
+
+    # Not a directory
+    else:
+        if options.directoriesonly:
+            perror("{filename}: can't delete (not directory)",
+                   filename=filename, _maybe=options.report_errors)
+        else:
+            return actually_delete(filename, options)
+
+def main():
+    parser = optparse.OptionParser(usage="%prog [options] filename ...")
+    # This is probably a terrible idea, but the old code did it
+    linked_to_rm = whoami == "rm"
+    linked_to_rmdir = whoami == "rmdir"
+    parser.add_option(
+        "-r", dest="recursive", action="store_true", default=False,
+        help="Recursively delete non-empty directories")
+    parser.add_option(
+        "-f", dest="force", action="store_true", default=False,
+        help="Do not ask questions or report errors about nonexistent files")
+    parser.add_option(
+        "-i", dest="interactive", action="store_true", default=False,
+        help="Prompt for confirmation before deleting each file/directory")
+    parser.add_option(
+        "-n", dest="noop", action="store_true", default=False,
+        help="Don't actually delete, just print what would be deleted")
+    parser.add_option(
+        "-v", dest="verbose", action="store_true", default=False,
+        help="Print each filename as it is deleted")
+    parser.add_option(
+        "-e", dest="emulate_rm", action="store_true",
+        default=(linked_to_rm or linked_to_rmdir),
+        help="Emulate the pecularities of rm and rmdir")
+    parser.add_option(
+        "-F", dest="filesonly", action="store_true", default=linked_to_rm,
+        help="Remove files only (refuse to remove even non-empty directories)")
+    parser.add_option(
+        "-D", dest="directoriesonly", action="store_true",
+        default=linked_to_rmdir,
+        help="Only remove empty directories (refuse to remove files)")
+    parser.add_option(
+        "--debug", action="callback", type='string', help="Enable debugging (logger target or 'all')",
+        callback=debug_callback, metavar='target')
+    (options, args) = parser.parse_args()
+    if options.filesonly and options.directoriesonly:
+        parser.error("-F and -D are mutually exclusive")
+    if options.recursive and options.directoriesonly:
+        parser.error("-r and -D are mutually exclusive")
+    if len(args) < 1:
+        parser.error("No files or directories specified.")
+    options.report_errors = not options.emulate_rm or not options.force
+    errors = 0
+    for filename in args:
+        # Because you know _someone_ will try it
+        if len(filename.rstrip('/')) < 1:
+            print >>sys.stderr, "That's not a good idea."
+            sys.exit(1)
+        # Trailing slashes make bad things happen
+        if not delete(filename.rstrip('/'), options):
+            errors = 1
+    return errors
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
+    sys.exit(main())

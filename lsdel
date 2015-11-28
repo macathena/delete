@@ -1,0 +1,117 @@
+#!/usr/bin/python
+
+import logging
+import optparse
+import os
+import sys
+
+import libdelete
+
+logger = logging.getLogger('lsdel')
+whoami = os.path.basename(sys.argv[0])
+
+def debug_callback(option, opt_str, value, parser):
+    """
+    An OptionParser callback that enables debugging.
+    """
+    all_loggers = [logger.name, 'libdelete']
+    loggers = [x.strip() for x in value.split(',')]
+    if value.lower() == 'all':
+        loggers = all_loggers
+    else:
+        if not set(loggers) == set(all_loggers):
+            parser.error('Valid debug targets: {0}'.format(
+                    ", ".join(all_loggers)))
+    for l in loggers:
+        logging.getLogger(l).setLevel(logging.DEBUG)
+
+def perror(message, **kwargs):
+    """
+    Format an error message, log it in the debug log
+    and maybe also print it to stderr.
+    """
+    should_print = not kwargs.pop('_maybe', False)
+    msg = "{0}: {1}".format(whoami, message.format(**kwargs))
+    logger.debug("Error: %s", msg)
+    if should_print:
+        print >>sys.stderr, msg
+
+def parse_options():
+    parser = optparse.OptionParser(usage="%prog [options] filename ...")
+    parser.add_option(
+        "-1", dest="singlecolumn", action="store_true", default=False,
+        help="Force single-column output")
+    parser.add_option(
+        "-C", dest="multicolumn", action="store_true", default=False,
+        help="Force multicolumn output (default when stdout is a tty)")
+    parser.add_option(
+        "-d", dest="dirsonly", action="store_true", default=False,
+        help="List directory names, not contents")
+    parser.add_option(
+        "-r", dest="recursive", action="store_true", default=False,
+        help="recursive")
+    parser.add_option(
+        "-t", dest="timev", action="store", type="int", default=0,
+        help="Only list n-day-or-older files", metavar="n")
+    parser.add_option(
+        "-y", dest="yieldsize", action="store_true", default=False,
+        help="Report total space taken up by files")
+    parser.add_option(
+        "-s", dest="f_links", action="store_true", default=False,
+        help="Follow symlinks to directories")
+    parser.add_option(
+        "-m", dest="f_mounts", action="store_true", default=False,
+        help="Follow mount points")
+    parser.add_option(
+        "--debug", action="callback", type='string', help="Enable debugging (logger target or 'all')",
+        callback=debug_callback, metavar='target')
+    (options, args) = parser.parse_args()
+    if options.singlecolumn and options.multicolumn:
+        parser.error("-C and -1 are mutually exclusive")
+    if not options.singlecolumn and not options.multicolumn:
+        options.singlecolumn = not sys.stdout.isatty()
+    # We really only need to this for mutual exclusivity
+    delattr(options, 'multicolumn')
+    return (options, args)
+
+def main():
+    rv = 0
+    (options, args) = parse_options()
+    if len(args) < 1:
+        args.append('.')
+    deleted_files = []
+    for filename in args:
+        try:
+            deleted_files += libdelete.find_deleted_files(
+                filename,
+                follow_links=options.f_links,
+                follow_mounts=options.f_mounts,
+                recurse_undeleted_subdirs=options.recursive or None,
+                recurse_deleted_subdirs= not options.dirsonly,
+                n_days=options.timev)
+        except libdelete.DeleteError as e:
+            perror(e.message)
+            rv = 1
+
+    print libdelete.format_columns(sorted(
+            [libdelete.relpath(
+                    libdelete.undeleted_name(x)) for x in deleted_files]),
+                                   options.singlecolumn)
+    if options.yieldsize:
+        total = None
+        try:
+            total = sum([os.path.getsize(x) for x in deleted_files])
+        except OSError as e:
+            perror('{filename}: {error} while getting size',
+                   filename=e.filename, error=e.strerror)
+            rv = 1
+
+        if total is None:
+            perror('Unable to display total size: errors occurred during calculation.')
+        else:
+            print "\nTotal space taken up by files: %dKB" % round((float(total) / 1024))
+    return rv
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.WARNING)
+    sys.exit(main())
