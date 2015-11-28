@@ -5,4 +5,4 @@ setup(name='delete',
       author='Debathena Project',
       author_email='debathena@mit.edu',
       scripts=['delete', 'undelete', 'lsdel', 'expunge'],
-      py_modules=['libdelete.py'])
+      py_modules=['libdelete'])
