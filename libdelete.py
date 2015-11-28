@@ -57,8 +57,6 @@ def is_mountpoint(path):
         return True
     if have_AFS and afs.fs.inafs(os.path.abspath(path)):
         afs.fs.whichcell(path)
-        print "afs.fs.inafs %s", path
-        print afs.fs.inafs(os.path.abspath(path))
         try:
             return afs.fs.lsmount(path) is not None
         except OSError as e:
