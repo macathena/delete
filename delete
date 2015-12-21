@@ -47,7 +47,7 @@ def perror(message, **kwargs):
     Format an error message, log it in the debug log
     and maybe also print it to stderr.
     """
-    should_print = not kwargs.pop('_maybe', False)
+    should_print = kwargs.pop('_maybe', False)
     msg = "{0}: {1}".format(whoami, message.format(**kwargs))
     logger.debug("Error: %s", msg)
     if should_print:
@@ -176,7 +176,7 @@ def main():
         parser.error("-r and -D are mutually exclusive")
     if len(args) < 1:
         parser.error("No files or directories specified.")
-    options.report_errors = not options.emulate_rm or not options.force
+    options.report_errors = not (options.emulate_rm or options.force)
     errors = 0
     for filename in args:
         # Because you know _someone_ will try it
