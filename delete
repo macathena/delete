@@ -76,7 +76,7 @@ def actually_delete(filename, options):
         if os.path.isdir(newname) and not os.path.islink(newname):
             shutil.rmtree(newname)
         else:
-            os.path.unlink(newname)
+            os.unlink(newname)
     assert not os.path.exists(newname), "Fatal error: new path exists"
     logger.debug("Move %s to %s", filename, newname)
     # Maybe we can just use os.rename here
