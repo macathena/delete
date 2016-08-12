@@ -1,3 +1,12 @@
+debathena-delete (10.1.1-0debathena1) unstable; urgency=medium
+
+  [ Jonathan Reed ]
+  * Import libdelete.  (Trac: #1570)
+  * Correctly call os.unlink.  (Trac: #1569)
+  * Don’t suck at boolean logic in perror().  (Trac: #1568)
+
+ -- Anders Kaseorg <andersk@mit.edu>  Thu, 11 Aug 2016 22:52:01 -0400
+
 debathena-delete (10.1-0debathena1) unstable; urgency=medium
 
   * Release a new pure-Python implementation of delete.
