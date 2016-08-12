@@ -12,6 +12,8 @@ import afs.fs
 logger = logging.getLogger('delete')
 whoami = os.path.basename(sys.argv[0])
 
+import libdelete
+
 def debug_callback(option, opt_str, value, parser):
     """
     An OptionParser callback that enables debugging.
@@ -45,7 +47,7 @@ def perror(message, **kwargs):
     Format an error message, log it in the debug log
     and maybe also print it to stderr.
     """
-    should_print = not kwargs.pop('_maybe', False)
+    should_print = kwargs.pop('_maybe', False)
     msg = "{0}: {1}".format(whoami, message.format(**kwargs))
     logger.debug("Error: %s", msg)
     if should_print:
@@ -74,7 +76,7 @@ def actually_delete(filename, options):
         if os.path.isdir(newname) and not os.path.islink(newname):
             shutil.rmtree(newname)
         else:
-            os.path.unlink(newname)
+            os.unlink(newname)
     assert not os.path.exists(newname), "Fatal error: new path exists"
     logger.debug("Move %s to %s", filename, newname)
     # Maybe we can just use os.rename here
@@ -174,7 +176,7 @@ def main():
         parser.error("-r and -D are mutually exclusive")
     if len(args) < 1:
         parser.error("No files or directories specified.")
-    options.report_errors = not options.emulate_rm or not options.force
+    options.report_errors = not (options.emulate_rm or options.force)
     errors = 0
     for filename in args:
         # Because you know _someone_ will try it
